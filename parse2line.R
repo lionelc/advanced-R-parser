@@ -199,6 +199,93 @@ isFunction_end <- function(funtoken, pos)
      return(FALSE)
 }
 
+find_block_entry <- function(funtoken, start)
+{
+	blockstart <- next_available_char(funtoken, start)
+	entrystart <- blockstart
+	if(funtoken[blockstart] == "IF")
+	{
+		entrystart <- next_available_char(funtoken, entrystart+1)
+		if(funtoken[entrystart] == "'('")
+		{
+			entrystart <- find_reverse_parenthesis(funtoken, entrystart)
+			entrystart <- next_available_char(funtoken, entrystart+1)
+			if(funtoken[entrystart] == "'{'")
+			{
+				entryend <- find_reverse_parenthesis(funtoken, entrystart)
+				entrystart <- next_available_char(funtoken, entrystart+1)
+				entryend <- last_available_char(funtoken, entryend-1)
+			}
+			else
+				entryend <- line_end(funtoken, entrystart)
+		}
+		else
+			stop("illegal format for if-block")
+	}
+	else if(funtoken[blockstart] == "ELSE")
+	{
+		entrystart <- next_available_char(funtoken, entrystart+1)
+		if(funtoken[entrystart] == "'{'")
+		{
+			entryend <- find_reverse_parenthesis(funtoken, entrystart)
+			entrystart <- next_available_char(funtoken, entrystart+1)
+			entryend <- last_available_char(funtoken, entryend-1)
+		}
+		else if(funtoken[entrystart] == "IF")
+		{
+			entryelem<- find_block_entry(funtoken, entrystart)
+			entrystart <- entryelem[1]
+			entryend <- entryelem[2]
+		}
+		else
+		{
+			entrystart <- next_available_char(funtoken, entrystart)
+			entryend <- line_end(funtoken, entrystart)
+		}
+	}
+	else if(funtoken[blockstart] == "FOR")
+	{
+		entrystart <- next_available_char(funtoken, entrystart+1)
+		if(funtoken[entrystart] == "'('")
+		{
+			entrystart <- find_reverse_parenthesis(funtoken, entrystart)
+			entrystart <- next_available_char(funtoken, entrystart+1)
+			if(funtoken[entrystart] == "'{'")
+			{
+				entryend <- find_reverse_parenthesis(funtoken, entrystart)
+				entrystart <- next_available_char(funtoken, entrystart+1)
+				entryend <- last_available_char(funtoken, entryend-1)
+			}
+			else
+				entryend <- line_end(funtoken, entrystart)
+		}
+		else
+			stop("illegal format for for-block")
+	}
+	else if(funtoken[blockstart] == "FUNCTION")
+	{
+				entrystart <- next_available_char(funtoken, entrystart+1)
+		if(funtoken[entrystart] == "'('")
+		{
+			entrystart <- find_reverse_parenthesis(funtoken, entrystart)
+			entrystart <- next_available_char(funtoken, entrystart+1)
+			if(funtoken[entrystart] == "'{'")
+			{
+				entryend <- find_reverse_parenthesis(funtoken, entrystart)
+				entrystart <- next_available_char(funtoken, entrystart+1)
+				entryend <- last_available_char(funtoken, entryend-1)
+			}
+			else
+				entryend <- line_end(funtoken, entrystart)
+		}
+		else
+			stop("illegal format for function-block")
+	}
+	else
+		stop("unsupported block")
+	c(entrystart, entryend)
+}
+
 expr_end <- function(funtoken, start)
 {
 	#browser()
@@ -625,11 +712,18 @@ line_extraction <- function(funtoken, start)
 			#exprstack <- stack.push(exprstack, list(startline=tempind, endline=tempind, type='sep', subtype='semicolon'))
 			lineelem$stack <- exprstack
 			lineelem$endpos <- tempind
-			if(length(exprstack$s) < 2)
+			if(length(exprstack$s) < 1)
+			{
+				exprstack <- stack.push(exprstack, list(startline=tempind, endline=tempind, type='sep', subtype='semicolon'))
+				lineelem$type <- 'semicolon'
+			}
+			else if(length(exprstack$s) < 2)
 				lineelem$type <- 'single'
 			else
 				lineelem$type <- 'normal'
 			return(lineelem)
+			#tempind <- tempind + 1
+			#next
 		}
 		else if(funtoken[tempind] == 'LEFT_ASSIGN' | funtoken[tempind] == 'RIGHT_ASSIGN' | funtoken[tempind]=='EQ_ASSIGN')
 		{
@@ -647,13 +741,13 @@ line_extraction <- function(funtoken, start)
 			}
 			else
 			{
-				#return(as.integer(exprstack$s[[length(exprstack$s)]]["endline"]))
+				#return(exprstack$s[[length(exprstack$s)]]$endline)
 				lineelem$stack <- exprstack
 				if(length(exprstack$s) < 2)
 					lineelem$type <- 'single'
 				else
 					lineelem$type <- 'normal'
-				lineelem$endpos <- exprstack$s[[length(exprstack$s)]]["endline"]
+				lineelem$endpos <- exprstack$s[[length(exprstack$s)]]$endline
 				return(lineelem)
 			}
 		}
@@ -663,20 +757,20 @@ line_extraction <- function(funtoken, start)
 		  #check the sequence of the stack
 		  if(exprstack$s[[1]]["type"] != 'expr' || exprstack$s[[2]]["type"] != 'assign' | exprstack$s[[3]]["type"]!='expr')
 		     stop("illegal structure of R code!") 
-			#return(as.integer(exprstack$s[[3]]["endline"]))
+			#return(exprstack$s[[3]]$endline)
 			lineelem$stack <- exprstack
 			lineelem$type <- 'normal'
-			lineelem$endpos <- exprstack$s[[3]]["endline"]
+			lineelem$endpos <- exprstack$s[[3]]$endline
 			return(lineelem)
 		}
 		else if(length(exprstack$s) >= 2)
 		{
 		    if(exprstack$s[[1]]["type"] == 'expr' && exprstack$s[[2]]["type"] == 'expr')
-		    	 #return(c(1, as.integer(exprstack$s[[1]]["endline"])))
+		    	 #return(c(1, exprstack$s[[1]]$endline))
 		    {
 		         lineelem$stack <- exprstack
 				 lineelem$type <- 'single'
-				 lineelem$endpos <- exprstack$s[[1]]["endline"]
+				 lineelem$endpos <- exprstack$s[[1]]$endline
 				 return(lineelem)
 		    }
 		}
@@ -716,6 +810,14 @@ collect_line_elements <- function(funtoken)
 	while(!isFunction_end(funtoken, tokennum))
 	{
 		tmplineelem <- line_extraction(funtoken, tokennum)
+		if(tmplineelem$type == "semicolon")
+		{
+			tokennum <- next_available_char(funtoken, as.numeric(tmplineelem$endpos)+1)
+			lasttokennum <- tokennum
+			print(paste("just semicolon: ", as.character(tmplineelem$endpos)))
+			print(paste("next line: ", as.character(tokennum)))
+			next
+		}
 		alllineelems [[tmpcount]] <- tmplineelem
 		tmpendline <- as.numeric(tmplineelem$endpos)
 		if(tmpendline < 0)
@@ -729,3 +831,79 @@ collect_line_elements <- function(funtoken)
 	alllineelems
 }
 
+
+#a new attribute is to be added to each line element to indicate 
+collect_recursive_line_elements <- function(funtoken, start, end)
+{
+	tokennum <- start
+	alllineelems <- NULL
+	#sweep each line 
+	print(paste("start from ", as.character(tokennum)))
+	lasttokennum <- -1
+	tmpcount <- 1
+	linecount <- 1
+	while(!isFunction_end(funtoken, tokennum) && tokennum <= end)
+	{
+		if(funtoken[tokennum] == "'}'") #"'}'" is the only terminal symbol that the program needs to jump over (at the line/block level)
+		{
+			tokennum <- tokennum+1
+			next
+		}
+		tmplineelem <- line_extraction(funtoken, tokennum)
+		if(tmplineelem$type == "semicolon")
+		{
+			tokennum <- next_available_char(funtoken, as.numeric(tmplineelem$endpos)+1)
+			lasttokennum <- tokennum
+			print(paste("ignorable", as.character(tmplineelem$endpos)))
+			print(paste("next line: ", as.character(tokennum)))
+			next
+		}
+		else if(tmplineelem$type == "block" | tmplineelem$type == "funcdef" | (tmplineelem$type=="single" & tmplineelem$stack$s[[1]]$type == "block"))
+		{
+			sublineelems <- NULL
+			substartpos <- tmplineelem$stack$s[[1]]$startline
+			subendpos <- find_block_entry(funtoken, substartpos)
+			substartpos <- subendpos[1]
+			subendpos <- subendpos[2]
+			sublineelems <- collect_recursive_line_elements(funtoken, substartpos,subendpos)
+			tmplineelem$nextcount <- length(sublineelems)
+			alllineelems[[linecount]] <- tmplineelem
+			linecount <- linecount+1
+			for(tmpelem in sublineelems)
+			{
+				alllineelems[[linecount]] <- tmpelem
+				linecount <- linecount+1
+			}
+			tmpendline <- alllineelems[[linecount-1]]$endpos
+		}
+		else #a regular line
+		{
+			tmplineelem$nextcount <- 0
+			alllineelems [[linecount]] <- tmplineelem
+			linecount <- linecount + 1
+			for(tmpelem in tmplineelem$stack$s)
+			{
+				if(tmpelem$type != "funcdef" & tmpelem$type != "block")
+					next 
+				substartpos <- tmpelem$startline
+				subendpos <- tmpelem$endline
+				sublineelems <- collect_recursive_line_elements(funtoken,substartpos,subendpos)
+				alllineelems[[linecount-1]]$nextcount <- length(sublineelems)
+				for(tmpelem2 in sublineelems)
+				{
+					alllineelems[[linecount]] <- tmpelem2
+					linecount <- linecount+1
+				}
+			}
+			tmpendline <- as.numeric(tmplineelem$endpos)
+		}
+		print(tmpendline)
+		if(tmpendline < 0)
+			break  #the end of the program
+		tokennum <- next_available_char(funtoken, tmpendline+1)
+		lasttokennum <- tokennum
+		tmpcount <- tmpcount+1
+		print(paste("next line: ", as.character(tokennum)))
+	}
+	alllineelems
+}
